@@ -1,7 +1,7 @@
 using namespace System.Net
 
 # Input bindings are passed in via param block.
-param([WebRequest]$Request, $TriggerMetadata)
+param($Request, $TriggerMetadata)
 
 # Write to the Azure Functions log stream.
 Write-Information 'Recieved a webhook request'
