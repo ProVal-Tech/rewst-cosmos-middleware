@@ -14,14 +14,7 @@ Write-Information "Target Path: $targetPath"
 $resourceType = $Request.Headers['ResourceType']
 $key = $Request.Headers['Key']
 $utcNow = [DateTime]::UtcNow.ToString("R")
-$authPayload = @"
-$($Request.Method.ToString().ToLowerInvariant())
-$($resourceType.ToString().ToLowerInvariant())
-$($targetPath.ToString())
-$($utcNow.ToString().ToLowerInvariant())
-
-
-"@
+$authPayload = "$($Request.Method.ToString().ToLowerInvariant())`n$($resourceType.ToString().ToLowerInvariant())`n$($targetPath.ToString())`n$($utcNow.ToString().ToLowerInvariant())`n`n"
 $hmacSha256 = [System.Security.Cryptography.HMACSHA256]::new()
 $hmacSha256.Key = [System.Convert]::FromBase64String($key)
 $hashPayload = $hmacSha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($authPayload))
@@ -31,7 +24,7 @@ $authSet = [WebUtility]::UrlEncode("type=$tokenType&ver=$tokenVersion&sig=$signa
 $cosmosRequest = [System.Net.Http.HttpRequestMessage]::new($Request.Method, $targetUri)
 $cosmosRequest.Content = [System.Net.Http.StringContent]::new($Request.Body, [System.Text.Encoding]::UTF8, 'application/json')
 $cosmosRequest.Headers.Add('Accept', 'application/json')
-$cosmosRequest.Headers.Add('Authorization', $authSet)
+$cosmosRequest.Headers.Add('authorization', $authSet)
 $cosmosRequest.Headers.Add('x-ms-date', $utcNow)
 $cosmosRequest.Headers.Add('x-ms-version', '2018-12-31')
 
