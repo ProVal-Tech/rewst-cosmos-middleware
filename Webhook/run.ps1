@@ -16,7 +16,7 @@ $utcNow = [DateTime]::UtcNow.ToString("R")
 $authPayload = @"
 $($Request.Method.ToString().ToLowerInvariant())
 $($resourceType.ToString().ToLowerInvariant())
-$($targetPath.ToString().ToLowerInvariant())
+$($targetPath.ToString())
 $($utcNow.ToString().ToLowerInvariant())
 
 
