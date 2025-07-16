@@ -5,11 +5,12 @@ param($Request, $TriggerMetadata)
 
 # Write to the Azure Functions log stream.
 Write-Information 'Recieved a webhook request'
-$Request.Headers.Keys
+$Request.Headers.Keys | ForEach-Object { Write-Information "$_ : $($Request.Headers[$_])" }
 $tokenType = $Request.Headers['TokenType']
 $tokenVersion = $Request.Headers['TokenVersion']
 $targetUri = $Request.Headers['TargetUri']
-$targetPath = $targetUri -replace '^https?://[^/]+', ''
+$targetPath = $targetUri -replace '^https?:\/\/[^\/]+', ''
+Write-Information "Target Path: $targetPath"
 $resourceType = $Request.Headers['ResourceType']
 $key = $Request.Headers['Key']
 $utcNow = [DateTime]::UtcNow.ToString("R")
