@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "rewst_cosmos_middleware": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7188",
+      "launchBrowser": false
+    }
+  }
+}
