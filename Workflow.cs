@@ -30,7 +30,6 @@ public class Workflow {
     public IActionResult Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req) {
         _logger.LogInformation("C# HTTP trigger function processed a request.");
         req.Headers.Keys.ToList().ForEach(k => _logger.LogInformation($"Header: {k} = {req.Headers[k]}"));
-        StringValues key = string.Empty;
         if (!req.Headers.TryGetValue("TargetUri", out StringValues targetUri)) {
             return new BadRequestObjectResult("Missing TargetUri header.");
         }
