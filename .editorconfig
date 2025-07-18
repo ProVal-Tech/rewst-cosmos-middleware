@@ -1,0 +1,20 @@
+# .editorconfig for One True Brace Style (OTBS)
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+
+# C#, C++, Java, JavaScript, TypeScript, etc.
+csharp_new_line_before_open_brace = none
+csharp_new_line_before_members_in_object_initializers = false
+csharp_new_line_before_members_in_anonymous_types = false
+csharp_new_line_before_catch = false
+csharp_new_line_before_else = false
+csharp_new_line_before_finally = false
+
+# For JS/TS (if supported by your tooling)
+[*.{js,ts,jsx,tsx}]
+brace_style = "1tbs"
