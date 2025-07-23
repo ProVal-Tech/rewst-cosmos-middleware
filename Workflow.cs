@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -8,7 +9,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Proval.Rewst;
 
-public class Workflow {
+public partial class Workflow {
     private readonly ILogger<Workflow> _logger;
 
     public Workflow(ILogger<Workflow> logger) {
@@ -39,6 +40,21 @@ public class Workflow {
         if (!req.Headers.TryGetValue("Key", out StringValues key)) {
             return new BadRequestObjectResult("Missing Key header.");
         }
+        string targetPath = UriBeginningRegex().Replace(targetUri.ToString(), string.Empty).TrimStart('/');
+        _logger.LogInformation("Target Path: {TargetPath}", targetPath);
+        string date = DateTime.UtcNow.ToString("r");
+        _logger.LogInformation("Date: {Date}", date);
+        string auth = GetMasterKeySignature(
+            req.Method,
+            date,
+            resourceType.ToString(),
+            targetPath,
+            key.ToString()
+        );
+        _logger.LogInformation("Authorization: {Auth}", auth);
         return new OkObjectResult("Welcome to Azure Functions!");
     }
+
+    [GeneratedRegex(@"^https?:\/\/[^\/]+")]
+    private static partial Regex UriBeginningRegex();
 }
