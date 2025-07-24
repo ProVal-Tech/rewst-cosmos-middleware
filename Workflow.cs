@@ -52,9 +52,61 @@ public partial class Workflow {
             key.ToString()
         );
         _logger.LogInformation("Authorization: {Auth}", auth);
-        return new OkObjectResult("Welcome to Azure Functions!");
+        HttpRequestMessage requestMessage = new(HttpMethod.Parse(req.Method), targetUri.ToString());
+        requestMessage.Headers.Add("Accept", "application/json");
+        requestMessage.Headers.Add("authorization", auth);
+        requestMessage.Headers.Add("x-ms-date", date);
+        requestMessage.Headers.Add("x-ms-version", "2018-12-31");
+        
+        if (req.Method.Equals("POST", StringComparison.OrdinalIgnoreCase)) {
+            using StreamReader reader = new(req.Body);
+            string requestBody = reader.ReadToEnd();
+            requestMessage.Content = new StringContent(
+                requestBody,
+                System.Text.Encoding.UTF8,
+                "application/json"
+            );
+        }
+        HttpClient httpClient = new();
+        try {
+            HttpResponseMessage response = httpClient.Send(requestMessage);
+            _logger.LogInformation("Response Status Code: {StatusCode}", response.StatusCode);
+            if (response.IsSuccessStatusCode) {
+                string responseBody = response.Content.ReadAsStringAsync().Result;
+                _logger.LogInformation("Response Body: {ResponseBody}", responseBody);
+                return new OkObjectResult(responseBody);
+            } else {
+                _logger.LogError("Request failed with status code: {StatusCode}", response.StatusCode);
+                return new StatusCodeResult((int)response.StatusCode);
+            }
+        } catch (Exception ex) {
+            _logger.LogError(ex, "An error occurred while processing the request.");
+            return new StatusCodeResult(StatusCodes.Status500InternalServerError);
+        }
     }
 
     [GeneratedRegex(@"^https?:\/\/[^\/]+")]
     private static partial Regex UriBeginningRegex();
 }
+
+/*
+$cosmosRequest.Headers.Add('Accept', 'application/json')
+$cosmosRequest.Headers.Add('authorization', $auth)
+$cosmosRequest.Headers.Add('x-ms-date', $utcNow)
+$cosmosRequest.Headers.Add('x-ms-version', '2018-12-31')
+
+$httpClient = [System.Net.Http.HttpClient]::new()
+try {
+    $response = $httpClient.SendAsync($cosmosRequest).Result
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+            StatusCode = $response.StatusCode
+            Body = $response.Content.ReadAsStringAsync().Result
+        })
+} catch {
+    Write-Error "An error occurred while processing the webhook: $_"
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+            StatusCode = [HttpStatusCode]::InternalServerError
+            Body = "An error occurred while processing the webhook: $_"
+        })
+}
+*/
