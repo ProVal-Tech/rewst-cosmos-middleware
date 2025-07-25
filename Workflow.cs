@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -16,97 +17,60 @@ public partial class Workflow {
         _logger = logger;
     }
 
-    public string GetMasterKeySignature(string verb, string date, string resourceType, string resourceLink, string masterKey) {
-        string keyType = "master";
-        string tokenVersion = "1.0";
-        string authPayload = $"{verb.ToLowerInvariant()}\n{resourceType.ToLowerInvariant()}\n{resourceLink}\n{date.ToLowerInvariant()}\n\n";
-        HMACSHA256 hmac = new(Convert.FromBase64String(masterKey));
-        byte[] hashPayload = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(authPayload));
-        string signature = Convert.ToBase64String(hashPayload);
-        string authSet = WebUtility.UrlEncode($"type={keyType}&ver={tokenVersion}&sig={signature}");
+    public string GetMasterKeySignature(string verb, string date, string resourceType, string resourceLink, string key) {
+        var keyType = "master";
+        var tokenVersion = "1.0";
+        var payload = $"{verb.ToString().ToLowerInvariant()}\n{resourceType.ToString().ToLowerInvariant()}\n{resourceLink}\n{date.ToLowerInvariant()}\n\n";
+
+        var hmacSha256 = new HMACSHA256 { Key = Convert.FromBase64String(key) };
+        var hashPayload = hmacSha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(payload));
+        var signature = Convert.ToBase64String(hashPayload);
+        var authSet = WebUtility.UrlEncode($"type={keyType}&ver={tokenVersion}&sig={signature}");
+
         return authSet;
     }
 
     [Function("Workflow")]
-    public IActionResult Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req) {
-        _logger.LogInformation("C# HTTP trigger function processed a request.");
-        req.Headers.Keys.ToList().ForEach(k => _logger.LogInformation($"Header: {k} = {req.Headers[k]}"));
-        if (!req.Headers.TryGetValue("TargetUri", out StringValues targetUri)) {
-            return new BadRequestObjectResult("Missing TargetUri header.");
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req) {
+        if (!req.Headers.TryGetValue("CosmosKey", out StringValues cosmosKey)) {
+            return new BadRequestObjectResult("Missing CosmosKey header.");
         }
-        if (!req.Headers.TryGetValue("ResourceType", out StringValues resourceType)) {
-            return new BadRequestObjectResult("Missing ResourceType header.");
+        if (!req.Headers.TryGetValue("AccountName", out StringValues accountName)) {
+            return new BadRequestObjectResult("Missing AccountName header.");
         }
-        if (!req.Headers.TryGetValue("Key", out StringValues key)) {
-            return new BadRequestObjectResult("Missing Key header.");
+        KeyValuePair<string, StringValues> targetFunctionKvp = req.Query.Where(q => q.Key == "targetFunction").FirstOrDefault();
+        if (targetFunctionKvp.Equals(default(KeyValuePair<string, StringValues>))) {
+            return new BadRequestObjectResult("Missing targetFunction query parameter.");
         }
-        string targetPath = UriBeginningRegex().Replace(targetUri.ToString(), string.Empty).TrimStart('/');
-        _logger.LogInformation("Target Path: {TargetPath}", targetPath);
-        string date = DateTime.UtcNow.ToString("r");
-        _logger.LogInformation("Date: {Date}", date);
-        string auth = GetMasterKeySignature(
-            req.Method,
-            date,
-            resourceType.ToString(),
-            targetPath,
-            key.ToString()
-        );
-        _logger.LogInformation("Authorization: {Auth}", auth);
-        HttpRequestMessage requestMessage = new(HttpMethod.Parse(req.Method), targetUri.ToString());
-        requestMessage.Headers.Add("Accept", "application/json");
-        requestMessage.Headers.Add("authorization", auth);
-        requestMessage.Headers.Add("x-ms-date", date);
-        requestMessage.Headers.Add("x-ms-version", "2018-12-31");
-        
-        if (req.Method.Equals("POST", StringComparison.OrdinalIgnoreCase)) {
-            using StreamReader reader = new(req.Body);
-            string requestBody = reader.ReadToEnd();
-            requestMessage.Content = new StringContent(
-                requestBody,
-                System.Text.Encoding.UTF8,
-                "application/json"
-            );
+        string targetFunction = targetFunctionKvp.Value.ToString();
+        string baseUrl = $"https://{accountName}.documents.azure.com";
+        string? databaseId = req.Query["databaseId"];
+        string? containerId = req.Query["containerId"];
+        if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
+            return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
         }
-        HttpClient httpClient = new();
-        try {
-            HttpResponseMessage response = httpClient.Send(requestMessage);
-            _logger.LogInformation("Response Status Code: {StatusCode}", response.StatusCode);
-            if (response.IsSuccessStatusCode) {
-                string responseBody = response.Content.ReadAsStringAsync().Result;
-                _logger.LogInformation("Response Body: {ResponseBody}", responseBody);
-                return new OkObjectResult(responseBody);
-            } else {
-                _logger.LogError("Request failed with status code: {StatusCode}", response.StatusCode);
-                return new StatusCodeResult((int)response.StatusCode);
-            }
-        } catch (Exception ex) {
-            _logger.LogError(ex, "An error occurred while processing the request.");
-            return new StatusCodeResult(StatusCodes.Status500InternalServerError);
-        }
+        await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
     }
 
     [GeneratedRegex(@"^https?:\/\/[^\/]+")]
     private static partial Regex UriBeginningRegex();
 }
 
-/*
-$cosmosRequest.Headers.Add('Accept', 'application/json')
-$cosmosRequest.Headers.Add('authorization', $auth)
-$cosmosRequest.Headers.Add('x-ms-date', $utcNow)
-$cosmosRequest.Headers.Add('x-ms-version', '2018-12-31')
+async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
+        string method = "GET";
+        var resourceType = "docs";
+        var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
+        var requestDateString = DateTime.UtcNow.ToString("r");
+        var auth = GetMasterKeySignature(method, requestDateString, resourceType, resourceLink, cosmosKey);
+        HttpClient httpClient = new();
+        httpClient.DefaultRequestHeaders.Clear();
+        httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        httpClient.DefaultRequestHeaders.Add("authorization", auth);
+        httpClient.DefaultRequestHeaders.Add("x-ms-date", requestDateString);
+        httpClient.DefaultRequestHeaders.Add("x-ms-version", "2018-12-31");
 
-$httpClient = [System.Net.Http.HttpClient]::new()
-try {
-    $response = $httpClient.SendAsync($cosmosRequest).Result
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = $response.StatusCode
-            Body = $response.Content.ReadAsStringAsync().Result
-        })
-} catch {
-    Write-Error "An error occurred while processing the webhook: $_"
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::InternalServerError
-            Body = "An error occurred while processing the webhook: $_"
-        })
-}
-*/
+        var requestUri = new Uri($"{baseUrl}/{resourceLink}/docs");
+        var httpRequest = new HttpRequestMessage { Method = HttpMethod.Parse(method), RequestUri = requestUri };
+
+        var httpResponse = await httpClient.SendAsync(httpRequest);
+    }
