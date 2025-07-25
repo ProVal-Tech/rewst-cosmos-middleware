@@ -1,7 +1,5 @@
 using System.Net;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -10,14 +8,10 @@ using Microsoft.Extensions.Primitives;
 
 namespace Proval.Rewst;
 
-public partial class Workflow {
-    private readonly ILogger<Workflow> _logger;
+public partial class Workflow(ILogger<Workflow> logger) {
+    private readonly ILogger<Workflow> _logger = logger;
 
-    public Workflow(ILogger<Workflow> logger) {
-        _logger = logger;
-    }
-
-    public string GetMasterKeySignature(string verb, string date, string resourceType, string resourceLink, string key) {
+    public static string GetMasterKeySignature(string verb, string date, string resourceType, string resourceLink, string key) {
         var keyType = "master";
         var tokenVersion = "1.0";
         var payload = $"{verb.ToString().ToLowerInvariant()}\n{resourceType.ToString().ToLowerInvariant()}\n{resourceLink}\n{date.ToLowerInvariant()}\n\n";
@@ -53,7 +47,7 @@ public partial class Workflow {
         return new OkObjectResult("Documents listed successfully.");
     }
 
-    async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
+    static async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
         var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
