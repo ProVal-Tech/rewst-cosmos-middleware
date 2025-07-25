@@ -38,22 +38,20 @@ public partial class Workflow {
         if (!req.Headers.TryGetValue("AccountName", out StringValues accountName)) {
             return new BadRequestObjectResult("Missing AccountName header.");
         }
-        KeyValuePair<string, StringValues> targetFunctionKvp = req.Query.Where(q => q.Key == "targetFunction").FirstOrDefault();
-        if (targetFunctionKvp.Equals(default(KeyValuePair<string, StringValues>))) {
+
+        string baseUrl = $"https://{accountName}.documents.azure.com";
+        string? targetFunction = req.Query["targetFunction"];
+        if (string.IsNullOrEmpty(targetFunction)) {
             return new BadRequestObjectResult("Missing targetFunction query parameter.");
         }
-        string targetFunction = targetFunctionKvp.Value.ToString();
-        string baseUrl = $"https://{accountName}.documents.azure.com";
         string? databaseId = req.Query["databaseId"];
         string? containerId = req.Query["containerId"];
         if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
             return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
         }
         await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
+        return new OkObjectResult("Documents listed successfully.");
     }
-
-    [GeneratedRegex(@"^https?:\/\/[^\/]+")]
-    private static partial Regex UriBeginningRegex();
 }
 
 async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
@@ -74,3 +72,4 @@ async Task ListDocuments(string baseUrl, string databaseId, string containerId, 
 
         var httpResponse = await httpClient.SendAsync(httpRequest);
     }
+}
