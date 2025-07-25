@@ -52,9 +52,8 @@ public partial class Workflow {
         await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
         return new OkObjectResult("Documents listed successfully.");
     }
-}
 
-async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
+    async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
         var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
