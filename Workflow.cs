@@ -43,11 +43,11 @@ public partial class Workflow(ILogger<Workflow> logger) {
         if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
             return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
         }
-        await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
-        return new OkObjectResult("Documents listed successfully.");
+        string response = await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
+        return new OkObjectResult(response);
     }
 
-    static async Task ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
+    static async Task<string> ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
         var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
@@ -64,5 +64,12 @@ public partial class Workflow(ILogger<Workflow> logger) {
         var httpRequest = new HttpRequestMessage { Method = HttpMethod.Parse(method), RequestUri = requestUri };
 
         var httpResponse = await httpClient.SendAsync(httpRequest);
+        if (httpResponse.IsSuccessStatusCode) {
+            var responseContent = await httpResponse.Content.ReadAsStringAsync();
+            return responseContent; // Return the response content or process it as needed
+        } else {
+            var errorContent = await httpResponse.Content.ReadAsStringAsync();
+            throw new Exception($"Error listing documents: {httpResponse.StatusCode} - {errorContent}");
+        }
     }
 }
