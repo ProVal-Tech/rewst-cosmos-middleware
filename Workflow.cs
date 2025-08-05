@@ -29,32 +29,37 @@ public partial class Workflow(ILogger<Workflow> logger) {
 
     [Function("Workflow")]
     public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function)] HttpRequest req) {
-        if (!req.Headers.TryGetValue("CosmosKey", out StringValues cosmosKey)) {
-            return new BadRequestObjectResult("Missing CosmosKey header.");
-        }
-        if (!req.Headers.TryGetValue("AccountName", out StringValues accountName)) {
-            return new BadRequestObjectResult("Missing AccountName header.");
-        }
+        try {
+            if (!req.Headers.TryGetValue("CosmosKey", out StringValues cosmosKey)) {
+                return new BadRequestObjectResult("Missing CosmosKey header.");
+            }
+            if (!req.Headers.TryGetValue("AccountName", out StringValues accountName)) {
+                return new BadRequestObjectResult("Missing AccountName header.");
+            }
 
-        string baseUrl = $"https://{accountName}.documents.azure.com";
-        string? targetFunction = req.Query["targetFunction"];
-        if (string.IsNullOrEmpty(targetFunction)) {
-            return new BadRequestObjectResult("Missing targetFunction query parameter.");
+            string baseUrl = $"https://{accountName}.documents.azure.com";
+            string? targetFunction = req.Query["targetFunction"];
+            if (string.IsNullOrEmpty(targetFunction)) {
+                return new BadRequestObjectResult("Missing targetFunction query parameter.");
+            }
+            string? databaseId = req.Query["databaseId"];
+            string? containerId = req.Query["containerId"];
+            if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
+                return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
+            }
+            string response;
+            switch (targetFunction) {
+                case "ListDocuments":
+                    response = await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
+                    break;
+                default:
+                    return new BadRequestObjectResult($"Unknown targetFunction: {targetFunction}");
+            }
+            return new OkObjectResult(response);
+        } catch (Exception ex) {
+            _logger.LogError(ex, "An error occurred while processing the request.");
+            return new StatusCodeResult(StatusCodes.Status500InternalServerError);
         }
-        string? databaseId = req.Query["databaseId"];
-        string? containerId = req.Query["containerId"];
-        if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
-            return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
-        }
-        string response;
-        switch (targetFunction) {
-            case "ListDocuments":
-                response = await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
-                break;
-            default:
-                return new BadRequestObjectResult($"Unknown targetFunction: {targetFunction}");
-        }
-        return new OkObjectResult(response);
     }
 
     private struct CosmosListDocumentsResponse {
@@ -99,5 +104,4 @@ public partial class Workflow(ILogger<Workflow> logger) {
             throw new Exception($"Error listing documents: {httpResponse.StatusCode} - {errorContent}");
         }
     }
-    
 }
