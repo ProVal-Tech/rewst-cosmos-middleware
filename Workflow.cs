@@ -112,8 +112,10 @@ public partial class Workflow(ILogger<Workflow> logger) {
                 _logger.LogInformation($"Continuing request with token: {continuationToken}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
                 httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
-                _logger.LogInformation($"Sending request for continuation token: {continuationToken}");
-                httpResponse = await httpClient.SendAsync(httpRequest);
+                _logger.LogInformation($"Sending request with continuation token: {continuationToken}");
+                // Create a new HttpRequestMessage for each request
+                var continuationRequest = new HttpRequestMessage { Method = HttpMethod.Parse(method), RequestUri = requestUri };
+                httpResponse = await httpClient.SendAsync(continuationRequest);
                 if (!httpResponse.IsSuccessStatusCode) {
                     throw new Exception($"Error fetching continuation token: {httpResponse.StatusCode}");
                 }
