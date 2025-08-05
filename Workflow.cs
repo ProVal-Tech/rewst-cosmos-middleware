@@ -43,7 +43,14 @@ public partial class Workflow(ILogger<Workflow> logger) {
         if (string.IsNullOrEmpty(databaseId) || string.IsNullOrEmpty(containerId)) {
             return new BadRequestObjectResult("Missing databaseId or containerId query parameters.");
         }
-        string response = await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
+        string response;
+        switch (targetFunction) {
+            case "ListDocuments":
+                response = await ListDocuments(baseUrl, databaseId, containerId, cosmosKey.ToString());
+                break;
+            default:
+                return new BadRequestObjectResult($"Unknown targetFunction: {targetFunction}");
+        }
         return new OkObjectResult(response);
     }
 
