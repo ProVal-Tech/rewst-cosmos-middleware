@@ -69,7 +69,9 @@ public partial class Workflow(ILogger<Workflow> logger) {
             return new StatusCodeResult(StatusCodes.Status500InternalServerError);
         }
     }
-
+    private struct CosmosContinuationTokenResponse {
+        public string Token { get; set; }
+    }
     private struct CosmosListDocumentsResponse {
         public IEnumerable<JsonObject> Documents { get; set; }
     }
@@ -104,11 +106,13 @@ public partial class Workflow(ILogger<Workflow> logger) {
             _logger.LogInformation($"Checking for continuation tokens in response headers");
             while (httpResponse.Headers.TryGetValues("x-ms-continuation", out var continuationValues)) {
                 _logger.LogInformation($"Found continuation token: {string.Join(", ", continuationValues)}");
-                var continuationToken = continuationValues.FirstOrDefault();
-                if (string.IsNullOrEmpty(continuationToken)) {
+                var continuationTokenJson = continuationValues.FirstOrDefault();
+                if (string.IsNullOrEmpty(continuationTokenJson)) {
                     _logger.LogInformation("No continuation token found, breaking out of loop");
                     break;
                 }
+                _logger.LogInformation($"Parsing continuation token: {continuationTokenJson}");
+                var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson).Token;
                 _logger.LogInformation($"Continuing request with token: {continuationToken}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
                 httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
