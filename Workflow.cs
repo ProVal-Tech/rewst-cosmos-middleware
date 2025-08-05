@@ -1,5 +1,8 @@
+using System.Drawing.Text;
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -25,7 +28,7 @@ public partial class Workflow(ILogger<Workflow> logger) {
     }
 
     [Function("Workflow")]
-    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req) {
+    public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function)] HttpRequest req) {
         if (!req.Headers.TryGetValue("CosmosKey", out StringValues cosmosKey)) {
             return new BadRequestObjectResult("Missing CosmosKey header.");
         }
@@ -54,6 +57,9 @@ public partial class Workflow(ILogger<Workflow> logger) {
         return new OkObjectResult(response);
     }
 
+    private struct CosmosListDocumentsResponse {
+        public IEnumerable<JsonObject> Documents { get; set; }
+    }
     static async Task<string> ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
@@ -72,11 +78,26 @@ public partial class Workflow(ILogger<Workflow> logger) {
 
         var httpResponse = await httpClient.SendAsync(httpRequest);
         if (httpResponse.IsSuccessStatusCode) {
-            var responseContent = await httpResponse.Content.ReadAsStringAsync();
-            return responseContent; // Return the response content or process it as needed
+            var responseContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
+            while (httpResponse.Headers.TryGetValues("x-ms-continuation", out var continuationValues)) {
+                var continuationToken = continuationValues.FirstOrDefault();
+                if (string.IsNullOrEmpty(continuationToken)) {
+                    break;
+                }
+                httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
+                httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
+                httpResponse = await httpClient.SendAsync(httpRequest);
+                if (!httpResponse.IsSuccessStatusCode) {
+                    throw new Exception($"Error fetching continuation token: {httpResponse.StatusCode}");
+                }
+                var continuationContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
+                responseContent.Documents = responseContent.Documents.Concat(continuationContent.Documents);
+            }
+            return System.Text.Json.JsonSerializer.Serialize(responseContent);
         } else {
             var errorContent = await httpResponse.Content.ReadAsStringAsync();
             throw new Exception($"Error listing documents: {httpResponse.StatusCode} - {errorContent}");
         }
     }
+    
 }
