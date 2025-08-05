@@ -2,6 +2,7 @@ using System.Drawing.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +14,13 @@ namespace Proval.Rewst;
 
 public partial class Workflow(ILogger<Workflow> logger) {
     private readonly ILogger<Workflow> _logger = logger;
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Skip
+    };
 
     public static string GetMasterKeySignature(string verb, string date, string resourceType, string resourceLink, string key) {
         var keyType = "master";
@@ -65,7 +73,7 @@ public partial class Workflow(ILogger<Workflow> logger) {
     private struct CosmosListDocumentsResponse {
         public IEnumerable<JsonObject> Documents { get; set; }
     }
-    static async Task<string> ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
+    async Task<string> ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
         var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
@@ -81,24 +89,42 @@ public partial class Workflow(ILogger<Workflow> logger) {
         var requestUri = new Uri($"{baseUrl}/{resourceLink}/docs");
         var httpRequest = new HttpRequestMessage { Method = HttpMethod.Parse(method), RequestUri = requestUri };
 
+        _logger.LogInformation($"Requesting documents from {requestUri} with method {method}");
         var httpResponse = await httpClient.SendAsync(httpRequest);
         if (httpResponse.IsSuccessStatusCode) {
+            _logger.LogInformation($"Successfully fetched documents from {requestUri}");
+            _logger.LogInformation($"Attempting to read response content as CosmosListDocumentsResponse");
             var responseContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
+            if (responseContent.Documents == null) {
+                _logger.LogWarning("No documents found in response content");
+                responseContent.Documents = [];
+                return JsonSerializer.Serialize(responseContent);
+            }
+            _logger.LogInformation($"Successfully read response content, found {responseContent.Documents?.Count() ?? 0} documents");
+            _logger.LogInformation($"Checking for continuation tokens in response headers");
             while (httpResponse.Headers.TryGetValues("x-ms-continuation", out var continuationValues)) {
+                _logger.LogInformation($"Found continuation token: {string.Join(", ", continuationValues)}");
                 var continuationToken = continuationValues.FirstOrDefault();
                 if (string.IsNullOrEmpty(continuationToken)) {
+                    _logger.LogInformation("No continuation token found, breaking out of loop");
                     break;
                 }
+                _logger.LogInformation($"Continuing request with token: {continuationToken}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
                 httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
+                _logger.LogInformation($"Sending request for continuation token: {continuationToken}");
                 httpResponse = await httpClient.SendAsync(httpRequest);
                 if (!httpResponse.IsSuccessStatusCode) {
                     throw new Exception($"Error fetching continuation token: {httpResponse.StatusCode}");
                 }
+                _logger.LogInformation($"Successfully fetched continuation documents from {requestUri}");
+                _logger.LogInformation($"Attempting to read continuation response content as CosmosListDocumentsResponse");
                 var continuationContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
-                responseContent.Documents = responseContent.Documents.Concat(continuationContent.Documents);
+                _logger.LogInformation($"Successfully read continuation response content, found {continuationContent.Documents?.Count() ?? 0} documents");
+                _logger.LogInformation($"Merging continuation documents into main response content");
+                responseContent.Documents = (responseContent.Documents ?? []).Concat(continuationContent.Documents ?? []);
             }
-            return System.Text.Json.JsonSerializer.Serialize(responseContent);
+            return JsonSerializer.Serialize(responseContent);
         } else {
             var errorContent = await httpResponse.Content.ReadAsStringAsync();
             throw new Exception($"Error listing documents: {httpResponse.StatusCode} - {errorContent}");
