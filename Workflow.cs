@@ -104,11 +104,17 @@ public partial class Workflow(ILogger<Workflow> logger) {
             }
             _logger.LogInformation($"Successfully read response content, found {responseContent.Documents?.Count() ?? 0} documents");
             _logger.LogInformation($"Checking for continuation tokens in response headers");
+            int continuationCount = 0;
             while (httpResponse.Headers.TryGetValues("x-ms-continuation", out var continuationValues)) {
                 _logger.LogInformation($"Found continuation token: {string.Join(", ", continuationValues)}");
                 var continuationTokenJson = continuationValues.FirstOrDefault();
                 if (string.IsNullOrEmpty(continuationTokenJson)) {
                     _logger.LogInformation("No continuation token found, breaking out of loop");
+                    break;
+                }
+                continuationCount++;
+                if (continuationCount > 10) {
+                    _logger.LogWarning("Continuation token limit exceeded, breaking out of loop to prevent infinite loop");
                     break;
                 }
                 _logger.LogInformation($"Parsing continuation token: {continuationTokenJson}");
