@@ -118,11 +118,11 @@ public partial class Workflow(ILogger<Workflow> logger) {
                     break;
                 }
                 _logger.LogInformation($"Parsing continuation token: {continuationTokenJson}");
-                var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson, _jsonSerializerOptions).Token;
-                _logger.LogInformation($"Continuing request with token: {continuationToken}");
+                //var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson, _jsonSerializerOptions).Token;
+                _logger.LogInformation($"Continuing request with token: {continuationTokenJson}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
-                httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
-                _logger.LogInformation($"Sending request with continuation token: {continuationToken}");
+                httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationTokenJson);
+                _logger.LogInformation($"Sending request with continuation token: {continuationTokenJson}");
                 // Create a new HttpRequestMessage for each request
                 var continuationRequest = new HttpRequestMessage { Method = HttpMethod.Parse(method), RequestUri = requestUri };
                 httpResponse = await httpClient.SendAsync(continuationRequest);
