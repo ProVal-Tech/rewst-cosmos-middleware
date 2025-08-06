@@ -69,12 +69,36 @@ public partial class Workflow(ILogger<Workflow> logger) {
             return new StatusCodeResult(StatusCodes.Status500InternalServerError);
         }
     }
-    private struct CosmosContinuationTokenResponse {
-        public string Token { get; set; }
+
+    async Task<string> CreateDocument(string baseUrl, string databaseId, string containerId, string cosmosKey, string document) {
+        string method = "POST";
+        var resourceType = "docs";
+        var resourceLink = $"dbs/{databaseId}/colls/{containerId}";
+        var requestDateString = DateTime.UtcNow.ToString("r");
+        var auth = GetMasterKeySignature(method, requestDateString, resourceType, resourceLink, cosmosKey);
+        HttpClient httpClient = new();
+        httpClient.DefaultRequestHeaders.Clear();
+        httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+        httpClient.DefaultRequestHeaders.Add("authorization", auth);
+        httpClient.DefaultRequestHeaders.Add("x-ms-date", requestDateString);
+        httpClient.DefaultRequestHeaders.Add("x-ms-version", "2018-12-31");
+        httpClient.DefaultRequestHeaders.Add("x-ms-documentdb-is-upsert", "True");
+        string requestUri = $"{baseUrl}/{resourceLink}/docs";
+        StringContent content = new(document, System.Text.Encoding.UTF8, "application/json");
+        HttpRequestMessage httpRequest = new() {
+            Method = HttpMethod.Parse(method),
+            RequestUri = new Uri(requestUri),
+            Content = content
+        };
+        HttpResponseMessage httpResponse = await httpClient.SendAsync(httpRequest);
+        if (httpResponse.IsSuccessStatusCode) {
+            _logger.LogInformation($"Successfully created document in {requestUri}");
+            return httpResponse.Content.ReadAsStringAsync().Result;
+        }
+        throw new Exception($"Error creating document: {httpResponse.StatusCode} - {await httpResponse.Content.ReadAsStringAsync()}");
     }
-    private struct CosmosListDocumentsResponse {
-        public IEnumerable<JsonObject> Documents { get; set; }
-    }
+    
+    private record CosmosListDocumentsResponse(IEnumerable<JsonObject> Documents);
     async Task<string> ListDocuments(string baseUrl, string databaseId, string containerId, string cosmosKey) {
         string method = "GET";
         var resourceType = "docs";
@@ -97,14 +121,12 @@ public partial class Workflow(ILogger<Workflow> logger) {
             _logger.LogInformation($"Successfully fetched documents from {requestUri}");
             _logger.LogInformation($"Attempting to read response content as CosmosListDocumentsResponse");
             var responseContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
-            if (responseContent.Documents == null) {
+            if (responseContent?.Documents == null) {
                 _logger.LogWarning("No documents found in response content");
-                responseContent.Documents = [];
                 return JsonSerializer.Serialize(responseContent);
             }
             _logger.LogInformation($"Successfully read response content, found {responseContent.Documents?.Count() ?? 0} documents");
             _logger.LogInformation($"Checking for continuation tokens in response headers");
-            int continuationCount = 0;
             while (httpResponse.Headers.TryGetValues("x-ms-continuation", out var continuationValues)) {
                 _logger.LogInformation($"Found continuation token: {string.Join(", ", continuationValues)}");
                 var continuationTokenJson = continuationValues.FirstOrDefault();
@@ -112,13 +134,7 @@ public partial class Workflow(ILogger<Workflow> logger) {
                     _logger.LogInformation("No continuation token found, breaking out of loop");
                     break;
                 }
-                continuationCount++;
-                if (continuationCount > 10) {
-                    _logger.LogWarning("Continuation token limit exceeded, breaking out of loop to prevent infinite loop");
-                    break;
-                }
                 _logger.LogInformation($"Parsing continuation token: {continuationTokenJson}");
-                //var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson, _jsonSerializerOptions).Token;
                 _logger.LogInformation($"Continuing request with token: {continuationTokenJson}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
                 httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationTokenJson);
@@ -132,9 +148,9 @@ public partial class Workflow(ILogger<Workflow> logger) {
                 _logger.LogInformation($"Successfully fetched continuation documents from {requestUri}");
                 _logger.LogInformation($"Attempting to read continuation response content as CosmosListDocumentsResponse");
                 var continuationContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>(_jsonSerializerOptions);
-                _logger.LogInformation($"Successfully read continuation response content, found {continuationContent.Documents?.Count() ?? 0} documents");
+                _logger.LogInformation($"Successfully read continuation response content, found {continuationContent?.Documents.Count() ?? 0} documents");
                 _logger.LogInformation($"Merging continuation documents into main response content");
-                responseContent.Documents = (responseContent.Documents ?? []).Concat(continuationContent.Documents ?? []);
+                responseContent = new((responseContent.Documents ?? []).Concat(continuationContent?.Documents ?? []));
             }
             return JsonSerializer.Serialize(responseContent);
         } else {
