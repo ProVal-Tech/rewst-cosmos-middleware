@@ -118,7 +118,7 @@ public partial class Workflow(ILogger<Workflow> logger) {
                     break;
                 }
                 _logger.LogInformation($"Parsing continuation token: {continuationTokenJson}");
-                var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson).Token;
+                var continuationToken = JsonSerializer.Deserialize<CosmosContinuationTokenResponse>(continuationTokenJson, _jsonSerializerOptions).Token;
                 _logger.LogInformation($"Continuing request with token: {continuationToken}");
                 httpClient.DefaultRequestHeaders.Remove("x-ms-continuation");
                 httpClient.DefaultRequestHeaders.Add("x-ms-continuation", continuationToken);
@@ -131,7 +131,7 @@ public partial class Workflow(ILogger<Workflow> logger) {
                 }
                 _logger.LogInformation($"Successfully fetched continuation documents from {requestUri}");
                 _logger.LogInformation($"Attempting to read continuation response content as CosmosListDocumentsResponse");
-                var continuationContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>();
+                var continuationContent = await httpResponse.Content.ReadFromJsonAsync<CosmosListDocumentsResponse>(_jsonSerializerOptions);
                 _logger.LogInformation($"Successfully read continuation response content, found {continuationContent.Documents?.Count() ?? 0} documents");
                 _logger.LogInformation($"Merging continuation documents into main response content");
                 responseContent.Documents = (responseContent.Documents ?? []).Concat(continuationContent.Documents ?? []);
